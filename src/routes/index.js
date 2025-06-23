@@ -105,7 +105,7 @@ async function backgroundHealthCheck(sentrios, username, password) {
     }
 }
 
-async function fetchcallStatus(req, res, next) {
+async function fetchcallStatus(req, res, _next) {
     try {
         const config = getConfig();
         const { username, password } = config.auth;
@@ -129,7 +129,7 @@ async function fetchcallStatus(req, res, next) {
     }
 }
 
-async function disconnectCall(req, res, next) {
+async function disconnectCall(req, res, _next) {
     try {
         const config = getConfig();
         const { username, password } = config.auth;
@@ -153,7 +153,7 @@ async function disconnectCall(req, res, next) {
     }
 }
 
-async function sendMessage(req, res, next) {
+async function sendMessage(req, res, _next) {
     try {
         const config = getConfig();
         const { username, password } = config.auth;
@@ -183,7 +183,7 @@ async function sendMessage(req, res, next) {
     }
 }
 
-async function sendFreetextMessage(req, res, next) {
+async function sendFreetextMessage(req, res, _next) {
     try {
         const config = getConfig();
         const { username, password } = config.auth;
@@ -222,7 +222,7 @@ async function sendFreetextMessage(req, res, next) {
     }
 }
 
-async function fetchCamSnapshot(req, res, next) {
+async function fetchCamSnapshot(req, res, _next) {
     try {
         const config = getConfig();
         const { username, password } = config.auth;
@@ -242,7 +242,7 @@ async function fetchCamSnapshot(req, res, next) {
             'arraybuffer' // Request binary data
         );
         
-        res.set('Content-Type', response.headers['content-type'] || 'image/jpeg');
+        res.set('Content-Type', response.headers['content-type']);
         res.send(Buffer.from(response.data));
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -287,7 +287,7 @@ function pollStatus(req, res) {
     });
 }
 
-function createMessage(req, res, next) {
+function createMessage(req, res, _next) {
     try {
         const config = getConfig();
         const { uid, message, response = false, timeout = 30, icon = 'operator' } = req.body;
@@ -312,7 +312,7 @@ function createMessage(req, res, next) {
     }
 }
 
-function editMessage(req, res, next) {
+function editMessage(req, res, _next) {
     try {
         const config = getConfig();
         const { id } = req.params;
@@ -335,7 +335,7 @@ function editMessage(req, res, next) {
     }
 }
 
-function deleteMessage(req, res, next) {
+function deleteMessage(req, res, _next) {
     try {
         const config = getConfig();
         const { id } = req.params;
