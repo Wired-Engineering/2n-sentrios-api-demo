@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>2N Sentrio API Test</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/css/index.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>2N Sentrio API Test</h1>
+        </div>
+        
+        <!-- Device Section (Collapsible) -->
+        <div class="section">
+            <h2 onclick="toggleAddDevice()" style="cursor: pointer;">
+                <span id="add-device-arrow">▶</span> Add New Device
+            </h2>
+            <div id="add-device-section" class="add-device-form" style="display: none;">
+                <div class="form-group">
+                    <label for="device-ip">Device IP Address:</label>
+                    <input type="text" id="device-ip" placeholder="192.168.1.100">
+                </div>
+                <div class="form-group">
+                    <label for="device-name">Device Name:</label>
+                    <input type="text" id="device-name" placeholder="Main Gate">
+                </div>
+                <button class="btn btn-success" onclick="addDevice()">Add Device</button>
+            </div>
+        </div>
+        
+        <!-- Message Templates Section -->
+        <div class="section">
+            <h2 onclick="toggleMessageTemplates()" style="cursor: pointer;">
+                <span id="templates-arrow">▶</span> Message Templates
+            </h2>
+            <div id="templates-section" style="display: none;">
+                <div class="resizable-container" id="templates-container">
+                    <div class="message-list" id="message-templates" style="height: 120px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;">
+                        <!-- Messages will be loaded here -->
+                    </div>
+                    <div class="resize-handle" id="templates-resize-handle">═══</div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="btn" onclick="loadMessages()">Refresh Messages</button>
+                    <button class="btn btn-success" onclick="openAddMessageDialog()">Add Message</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Device Status Section -->
+            <div class="section">
+                <h2>Device Status</h2>
+                <div class="card-grid" id="devices-grid">
+                    <% if (locals.sentrios && locals.sentrios.length > 0) { %>
+                        <% locals.sentrios.forEach(function(sentrio) { %>
+                        <div class="card" data-device="<%= sentrio.ip %>">
+                            <div class="device-info">
+                                <h3>
+                                    <span class="status-indicator status-<%= sentrio.status %>"></span>
+                                    <%= sentrio.name %>
+                                </h3>
+                                <p><strong>IP:</strong> <%= sentrio.ip %></p>
+                                <p><strong>Status:</strong> <span class="device-status"><%= sentrio.status %></span></p>
+                                
+                                <div class="device-actions">
+                                    <button class="btn" onclick="checkCallStatus('<%= sentrio.ip %>')">Check Calls</button>
+                                    <button class="btn btn-success" onclick="takeSnapshot('<%= sentrio.ip %>')">Snapshot</button>
+                                    <button class="btn btn-warning" id="send-msg-<%= sentrio.ip.replace(/\./g, '-') %>" onclick="openChatForDevice('<%= sentrio.ip %>', '<%= sentrio.name %>')" disabled>Open Chat</button>
+                                    <button class="btn btn-info" onclick="viewChatHistory('<%= sentrio.ip %>', '<%= sentrio.name %>')" style="font-size: 11px;">Chat History</button>
+                                    <button class="btn btn-danger" onclick="removeDevice('<%= sentrio.ip %>')">Remove</button>
+                                </div>
+                                
+                                <div id="call-status-<%= sentrio.ip.replace(/\./g, '-') %>" class="call-status" style="display: none;">
+                                    <strong>Call Status:</strong>
+                                    <div id="call-details-<%= sentrio.ip.replace(/\./g, '-') %>"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="device-snapshot">
+                                <div id="snapshot-container-<%= sentrio.ip.replace(/\./g, '-') %>" style="display: none;">
+                                    <strong>Camera Snapshot</strong>
+                                    <div id="snapshot-content-<%= sentrio.ip.replace(/\./g, '-') %>"></div>
+                                    <div id="snapshot-time-<%= sentrio.ip.replace(/\./g, '-') %>" style="font-size: 11px; color: #666; margin-top: 5px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <% }); %>
+                    <% } else { %>
+                        <div class="card">
+                            <h3>No devices configured</h3>
+                        </div>
+                    <% } %>
+                </div>
+            </div>
+                </div>
+    
+    <!-- Chat Container (Hidden by default) -->
+    <div id="chat-container" class="chat-container">
+        <div class="chat-header">
+            <div>
+                <strong id="chat-device-name">Device Chat</strong>
+                <br><small id="chat-device-ip"></small>
+            </div>
+            <button class="chat-close-btn" onclick="closeChatContainer()">&times;</button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input">
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Message Type:</label>
+                <select id="message-type" onchange="toggleMessageInput()" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="template">Use Template</option>
+                    <option value="freetext">Free Text</option>
+                </select>
+            </div>
+            
+            <div id="template-input" style="margin-bottom: 10px;">
+                <select id="message-selector" class="message-selector">
+                    <option value="">Select a message to send...</option>
+                </select>
+            </div>
+            
+            <div id="freetext-input" style="display: none; margin-bottom: 10px;">
+                <textarea id="freetext-message" placeholder="Enter your message..." style="width: 100%; height: 60px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;"></textarea>
+                <div style="margin-top: 5px; display: flex; gap: 10px; font-size: 12px;">
+                    <label><input type="checkbox" id="freetext-response"> Require response</label>
+                    <select id="freetext-timeout" style="padding: 2px;">
+                        <option value="30">30s</option>
+                        <option value="60">1m</option>
+                        <option value="300">5m</option>
+                        <option value="3600">1h</option>
+                        <option value="86400">24h</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button class="chat-send-btn" onclick="sendChatMessage()">Send Message</button>
+        </div>
+    </div>
+    
+    <script>
+        // Device Management
+        async function addDevice() {
+            const ip = document.getElementById('device-ip').value;
+            const name = document.getElementById('device-name').value;
+            
+            if (!ip || !name) {
+                alert('Please enter both IP address and device name');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/sentrios/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, name })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error adding device: ' + error.message);
+            }
+        }
+        
+        async function removeDevice(ip) {
+            if (!confirm('Are you sure you want to remove this device?')) return;
+            
+            try {
+                const response = await fetch('/sentrios/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error removing device: ' + error.message);
+            }
+        }
+        
+        // Chat Management
+        const deviceChats = new Map(); // Store chat history per device
+        const deviceSessions = new Map(); // Store current session info per device
+        let currentChatDevice = null;
+        let availableMessages = [];
+        
+        async function openChatForDevice(ip, name, forNewCall = false) {
+            currentChatDevice = ip;
+            
+            // Only load chat history from server if this is NOT a new call
+            if (!forNewCall) {
+                await loadChatHistoryFromServer(ip, forNewCall);
+            }
+            
+            // Update chat header
+            document.getElementById('chat-device-name').textContent = name;
+            document.getElementById('chat-device-ip').textContent = ip;
+            
+            // Load available messages into selector
+            await loadMessagesForChat();
+            
+            // Display chat history
+            displayChatHistory(ip);
+            
+            // Show chat container
+            document.getElementById('chat-container').style.display = 'block';
+        }
+        
+        async function loadChatHistoryFromServer(ip, forNewCall = false) {
+            try {
+                console.log('Loading chat history for IP:', ip, 'forNewCall:', forNewCall);
+                const url = forNewCall ? `/chat-history/${ip}?newCall=true` : `/chat-history/${ip}`;
+                const response = await fetch(url);
+                const result = await response.json();
+                                
+                if (result.success) {
+                    // Extract the actual history array from the session object
+                    const historyArray = result.history && result.history.history ? result.history.history : (Array.isArray(result.history) ? result.history : []);
+                    deviceChats.set(ip, historyArray);
+                    console.log('Set chat history for', ip, ':', historyArray);
+                } else {
+                    deviceChats.set(ip, []);
+                    console.log('No chat history found for', ip);
+                }
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                deviceChats.set(ip, []);
+            }
+        }
+        
+        async function saveChatHistoryToServer(ip, sessionId = null) {
+            try {
+                const history = deviceChats.get(ip) || [];
+                const currentSession = deviceSessions.get(ip);
+                const finalSessionId = sessionId || currentSession?.sessionId;
+                
+                await fetch(`/chat-history/${ip}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        history,
+                        sessionId: finalSessionId
+                    })
+                });
+            } catch (error) {
+                console.error('Error saving chat history:', error);
+            }
+        }
+        
+        function closeChatContainer() {
+            document.getElementById('chat-container').style.display = 'none';
+            currentChatDevice = null;
+        }
+        
+        async function loadMessagesForChat() {
+            try {
+                const response = await fetch('/messages');
+                const result = await response.json();
+                
+                if (result.success) {
+                    availableMessages = result.messages;
+                    const selector = document.getElementById('message-selector');
+                    selector.innerHTML = '<option value="">Select a message to send...</option>';
+                    
+                    result.messages.forEach(msg => {
+                        const englishText = msg.message.find(m => m.language === 'en')?.text || 'N/A';
+                        const option = document.createElement('option');
+                        option.value = msg.uid;
+                        option.textContent = `${msg.uid}: ${englishText}`;
+                        selector.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+        
+        function displayChatHistory(ip) {
+            const chatMessages = document.getElementById('chat-messages');
+            const history = deviceChats.get(ip) || [];
+            
+            chatMessages.innerHTML = '';
+            
+            if (history.length === 0) {
+                chatMessages.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No messages yet. Send a message to start the conversation.</div>';
+                return;
+            }
+            
+            history.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                
+                if (entry.type === 'operator') {
+                    messageDiv.className = 'chat-message message-operator';
+                    messageDiv.innerHTML = `
+                        <div><strong>Operator:</strong> ${entry.content}</div>
+                        <small>${entry.timestamp}</small>
+                    `;
+                } else if (entry.type === 'user') {
+                    const responseClass = entry.response === 'yes' ? '' : 'response-no';
+                    messageDiv.className = `chat-message message-user ${responseClass}`;
+                    messageDiv.innerHTML = `
+                        <div><strong>User:</strong> ${entry.response === 'yes' ? 'YES' : 'NO'}</div>
+                        <small>${entry.timestamp}</small>
+                    `;
+                } else if (entry.type === 'system') {
+                    messageDiv.className = 'chat-message';
+                    messageDiv.style.cssText = 'background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; text-align: center;';
+                    messageDiv.innerHTML = `<small>${entry.content}</small>`;
+                }
+                
+                chatMessages.appendChild(messageDiv);
+            });
+            
+            // Scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        async function sendChatMessage() {
+            const messageType = document.getElementById('message-type').value;
+            
+            if (!currentChatDevice) {
+                alert('No device selected for chat');
+                return;
+            }
+            
+            let messagePayload = {};
+            let operatorMessage = '';
+            
+            if (messageType === 'template') {
+                const selector = document.getElementById('message-selector');
+                const messageUid = selector.value;
+                
+                if (!messageUid) {
+                    alert('Please select a message to send');
+                    return;
+                }
+                
+                const message = availableMessages.find(m => m.uid === messageUid);
+                if (!message) {
+                    alert('Message not found');
+                    return;
+                }
+                
+                // Template message payload
+                messagePayload = { ip: currentChatDevice, messageUid };
+                
+                // Format for chat display
+                const englishText = message.message.find(m => m.language === 'en')?.text || 'N/A';
+                const spanishText = message.message.find(m => m.language === 'es')?.text || 'N/A';
+                operatorMessage = `${englishText} / ${spanishText}`;
+                
+                // Reset selector
+                selector.value = '';
+                
+            } else if (messageType === 'freetext') {
+                const textArea = document.getElementById('freetext-message');
+                const messageText = textArea.value.trim();
+                
+                if (!messageText) {
+                    alert('Please enter a message');
+                    return;
+                }
+                
+                const requireResponse = document.getElementById('freetext-response').checked;
+                const timeout = parseInt(document.getElementById('freetext-timeout').value);
+                
+                // Generate unique UID for freetext
+                const uid = `freetext_${Date.now()}`;
+                
+                // Freetext message payload with custom format
+                messagePayload = {
+                    ip: currentChatDevice,
+                    freetext: {
+                        uid: uid,
+                        text: messageText,
+                        response: requireResponse,
+                        timeout: timeout,
+                        icon: "technician"
+                    }
+                };
+                
+                operatorMessage = messageText;
+                
+                // Clear textarea
+                textArea.value = '';
+            }
+            
+            // Add operator message to chat history
+            addToChatHistory(currentChatDevice, 'operator', operatorMessage);
+            displayChatHistory(currentChatDevice);
+            
+            // Send the message
+            try {
+                const endpoint = messageType === 'template' ? '/message' : '/message/freetext';
+                const response = await fetch(endpoint, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(messagePayload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.result && result.result.response !== undefined) {
+                    // Add user response to chat history
+                    const userResponse = result.result.response;
+                    addToChatHistory(currentChatDevice, 'user', '', userResponse);
+                    displayChatHistory(currentChatDevice);
+                } else if (!result.success) {
+                    // Handle error - show error message in chat
+                    addToChatHistory(currentChatDevice, 'system', `Error: ${result.error}`);
+                    displayChatHistory(currentChatDevice);
+                }
+                
+            } catch (error) {
+                addToChatHistory(currentChatDevice, 'system', `Error: ${error.message}`);
+                displayChatHistory(currentChatDevice);
+            }
+        }
+        
+        function addToChatHistory(ip, type, content, response = null) {
+            if (!deviceChats.has(ip)) {
+                deviceChats.set(ip, []);
+            }
+            
+            const history = deviceChats.get(ip);
+            const entry = {
+                type,
+                content,
+                response,
+                timestamp: new Date().toLocaleString(),
+                date: new Date().toISOString()
+            };
+            
+            history.push(entry);
+            
+            // Save to server
+            saveChatHistoryToServer(ip);
+        }
+        
+        async function clearChatHistory(ip) {
+            try {
+                await fetch(`/chat-history/${ip}`, { method: 'DELETE' });
+                deviceChats.set(ip, []);
+                if (currentChatDevice === ip) {
+                    displayChatHistory(ip);
+                }
+            } catch (error) {
+                console.error('Error clearing chat history:', error);
+            }
+        }
+        
+        function toggleMessageInput() {
+            const messageType = document.getElementById('message-type').value;
+            const templateInput = document.getElementById('template-input');
+            const freetextInput = document.getElementById('freetext-input');
+            
+            if (messageType === 'freetext') {
+                templateInput.style.display = 'none';
+                freetextInput.style.display = 'block';
+            } else {
+                templateInput.style.display = 'block';
+                freetextInput.style.display = 'none';
+            }
+        }
+        
+        async function viewChatHistory(ip, name) {
+            console.log('ViewChatHistory called for:', ip, name);
+            
+            try {
+                // Get list of chat session files for this device
+                const response = await fetch(`/chat-history/${ip}/sessions`);
+                const result = await response.json();
+                
+                // Modal to show downloadable files
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;';
+                
+                const content = document.createElement('div');
+                content.style.cssText = 'background: white; padding: 20px; border: 1px solid #ccc; max-width: 600px; max-height: 80%; overflow-y: auto; border-radius: 8px;';
+                
+                let filesHtml = '';
+                
+                if (result.success && result.sessions && result.sessions.length > 0) {
+                    filesHtml = '<div style="max-height: 400px; overflow-y: auto;">';
+                    result.sessions.forEach(session => {
+                        const startTime = new Date(session.startTime).toLocaleString();
+                        const lastUpdate = new Date(session.lastUpdate).toLocaleString();
+                        filesHtml += `
+                            <div style="border: 1px solid #ddd; margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                                <div><strong>Session:</strong> ${session.sessionId}</div>
+                                <div><small>Started: ${startTime}</small></div>
+                                <div><small>Last Update: ${lastUpdate}</small></div>
+                                <div><small>Messages: ${session.messageCount}</small></div>
+                                <div style="margin-top: 8px;">
+                                    <button class="btn btn-info" onclick="downloadChatFile('${ip}', '${session.fileName}')" style="font-size: 12px; padding: 4px 8px;">Download JSON</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    filesHtml += '</div>';
+                } else {
+                    filesHtml = '<p style="text-align: center; color: #666;">No chat history files found for this device</p>';
+                }
+                
+                content.innerHTML = `
+                    <h3>Chat History Files - ${name}</h3>
+                    <p><strong>Device IP:</strong> ${ip}</p>
+                    ${filesHtml}
+                    <div style="margin-top: 15px; text-align: center;">
+                        <button class="btn" onclick="closeModalHelper(this)">Close</button>
+                        <button class="btn btn-danger" onclick="confirmClearHistory('${ip}', this)">Clear All History</button>
+                    </div>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+                
+            } catch (error) {
+                console.error('Error loading chat sessions:', error);
+                alert('Error loading chat history files: ' + error.message);
+            }
+        }
+        
+        async function downloadChatFile(ip, fileName) {
+            try {
+                const response = await fetch(`/chat-history/${ip}/download/${fileName}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error('Error downloading chat file:', error);
+                alert('Error downloading file: ' + error.message);
+            }
+        }
+        
+        function closeModalHelper(button) {
+            const modal = button.closest('div[style*="position: fixed"]');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        function confirmClearHistory(ip, button) {
+            if (confirm('Are you sure you want to clear the chat history for this device?')) {
+                clearChatHistory(ip);
+                const modal = button.closest('div[style*="position: fixed"]');
+                if (modal) {
+                    modal.remove();
+                }
+                alert('Chat history cleared');
+            }
+        }
+        
+        function toggleAddDevice() {
+            const section = document.getElementById('add-device-section');
+            const arrow = document.getElementById('add-device-arrow');
+            
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                arrow.textContent = '▼';
+            } else {
+                section.style.display = 'none';
+                arrow.textContent = '▶';
+            }
+        }
+        
+        function toggleMessageTemplates() {
+            const section = document.getElementById('templates-section');
+            const arrow = document.getElementById('templates-arrow');
+            
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                arrow.textContent = '▼';
+            } else {
+                section.style.display = 'none';
+                arrow.textContent = '▶';
+            }
+        }
+        
+        // Draggable resize for message templates
+        function initializeResizeHandle() {
+            const handle = document.getElementById('templates-resize-handle');
+            const container = document.getElementById('message-templates');
+            let isResizing = false;
+            
+            handle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                document.addEventListener('mousemove', handleResize);
+                document.addEventListener('mouseup', stopResize);
+                e.preventDefault();
+            });
+            
+            function handleResize(e) {
+                if (!isResizing) return;
+                
+                const containerRect = container.parentElement.getBoundingClientRect();
+                const newHeight = e.clientY - containerRect.top - 40;
+                
+                // Only enforce minimum height, no maximum
+                if (newHeight > 80) {
+                    container.style.height = newHeight + 'px';
+                }
+            }
+            
+            function stopResize() {
+                isResizing = false;
+                document.removeEventListener('mousemove', handleResize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        }
+        
+        // Call Status
+        async function checkCallStatus(ip) {
+            const statusDiv = document.getElementById('call-status-' + ip.replace(/\./g, '-'));
+            const detailsDiv = document.getElementById('call-details-' + ip.replace(/\./g, '-'));
+            const sendMsgBtn = document.getElementById('send-msg-' + ip.replace(/\./g, '-'));
+            
+            try {
+                const response = await fetch(`/calls/status?ip=${ip}`);
+                const result = await response.json();
+                
+                let hasActiveCalls = false;
+                if (result.success && result.result && result.result.sessions) {
+                    let html = '';
+                    result.result.sessions.forEach(session => {
+                        if (session.state === 'active' || session.state === 'connecting') {
+                            hasActiveCalls = true;
+                        }
+                        html += `<div>Session ${session.session}: ${session.state} (${session.direction})`;
+                        if (session.calls && session.calls.length > 0) {
+                            html += `<button class="btn btn-danger" onclick="disconnectCall('${ip}', ${session.session})">Disconnect</button>`;
+                        }
+                        html += '</div>';
+                    });
+                    detailsDiv.innerHTML = html || 'No active calls';
+                    
+                    // Enable/disable send message button based on active calls
+                    if (sendMsgBtn) {
+                        sendMsgBtn.disabled = !hasActiveCalls;
+                        sendMsgBtn.style.opacity = hasActiveCalls ? '1' : '0.5';
+                    }
+                    
+                    // Automatically take snapshot if there are active calls
+                    if (hasActiveCalls) {
+                        takeInlineSnapshot(ip);
+                        
+                        // Create new session if one doesn't exist for this call
+                        if (!deviceSessions.has(ip)) {
+                            const sessionId = `call_${new Date().toISOString().replace(/[:.]/g, '-')}_${result.result.sessions[0].session || 'unknown'}`;
+                            deviceSessions.set(ip, {
+                                sessionId,
+                                startTime: new Date().toISOString(),
+                                callSession: result.result.sessions[0].session
+                            });
+                            // Clear current chat history to start fresh
+                            deviceChats.set(ip, []);
+                        }
+                        
+                        // Auto-open chat for this device if not already open
+                        if (currentChatDevice !== ip) {
+                            const deviceName = document.querySelector(`[data-device="${ip}"] h3`).textContent.trim();
+                            openChatForDevice(ip, deviceName, true);
+                        }
+                    } else {
+                        // Save final session data when call ends
+                        if (deviceSessions.has(ip)) {
+                            const history = deviceChats.get(ip) || [];
+                            if (history.length > 0) {
+                                saveChatHistoryToServer(ip);
+                            }
+                            deviceSessions.delete(ip);
+                        }
+                        
+                        // Clear current chat history
+                        deviceChats.set(ip, []);
+                        
+                        // Close chat if it's open for this device
+                        if (currentChatDevice === ip) {
+                            closeChatContainer();
+                        }
+                    }
+                } else {
+                    detailsDiv.innerHTML = 'No active calls';
+                    if (sendMsgBtn) {
+                        sendMsgBtn.disabled = true;
+                        sendMsgBtn.style.opacity = '0.5';
+                    }
+                }
+                statusDiv.style.display = 'block';
+            } catch (error) {
+                detailsDiv.innerHTML = 'Error: ' + error.message;
+                statusDiv.style.display = 'block';
+                if (sendMsgBtn) {
+                    sendMsgBtn.disabled = true;
+                    sendMsgBtn.style.opacity = '0.5';
+                }
+            }
+        }
+        
+        async function disconnectCall(ip, session) {
+            try {
+                const response = await fetch('/calls/disconnect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, session })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('Call disconnected successfully');
+                    checkCallStatus(ip);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error disconnecting call: ' + error.message);
+            }
+        }
+        
+        // Snapshot
+        async function takeSnapshot(ip) {
+            takeInlineSnapshot(ip);
+        }
+        
+        async function takeInlineSnapshot(ip) {
+            const container = document.getElementById('snapshot-container-' + ip.replace(/\./g, '-'));
+            const content = document.getElementById('snapshot-content-' + ip.replace(/\./g, '-'));
+            const timeDiv = document.getElementById('snapshot-time-' + ip.replace(/\./g, '-'));
+            
+            try {
+                // Show loading message
+                content.innerHTML = '<p style="margin: 5px 0;">Loading snapshot...</p>';
+                container.style.display = 'block';
+                
+                const response = await fetch(`/snapshot?ip=${ip}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    
+                    // Clean up previous blob URL to prevent memory leaks
+                    const existingImg = content.querySelector('img');
+                    if (existingImg && existingImg.src && existingImg.src.startsWith('blob:')) {
+                        URL.revokeObjectURL(existingImg.src);
+                    }
+                    
+                    const url = URL.createObjectURL(blob);
+                    const timestamp = new Date();
+                    
+                    // Image element and handle load/error events
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = 'Camera Snapshot';
+                    img.style.cssText = 'max-width: 280px; height: auto; border: 1px solid #ccc; display: block; margin: 0 auto;';
+                    
+                    img.onload = function() {
+                        content.innerHTML = '';
+                        content.appendChild(img);
+                        timeDiv.innerHTML = `Snapshot: ${timestamp.toLocaleString()}`;
+                    };
+                    
+                    img.onerror = function() {
+                        content.innerHTML = `<p style="margin: 5px 0; color: red;">Failed to display image</p>`;
+                        timeDiv.innerHTML = '';
+                        URL.revokeObjectURL(url);
+                    };
+                } else {
+                    let errorText;
+                    try {
+                        const errorJson = await response.json();
+                        errorText = errorJson.error ? (errorJson.error.description || errorJson.error) : 'Unknown error';
+                    } catch {
+                        errorText = await response.text();
+                    }
+                    content.innerHTML = `<p style="margin: 5px 0; color: red;">Error: ${errorText}</p>`;
+                    timeDiv.innerHTML = '';
+                }
+            } catch (error) {
+                content.innerHTML = `<p style="margin: 5px 0; color: red;">Error: ${error.message}</p>`;
+                timeDiv.innerHTML = '';
+            }
+        }
+        
+        
+        // Messages
+        async function loadMessages() {
+            try {
+                const response = await fetch('/messages');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const container = document.getElementById('message-templates');
+                    let html = '';
+                    
+                    result.messages.forEach(msg => {
+                        const englishText = msg.message.find(m => m.language === 'en')?.text || 'N/A';
+                        const spanishText = msg.message.find(m => m.language === 'es')?.text || 'N/A';
+                        
+                        html += `<div class="message-item" style="border: 1px solid #ddd; margin: 5px 0; padding: 8px;">`;
+                        html += `<strong>${msg.uid}</strong> <small>(${msg.icon})</small><br>`;
+                        html += `<small>EN: ${englishText}</small><br>`;
+                        html += `<small>ES: ${spanishText}</small><br>`;
+                        html += `<small>Response: ${msg.response ? 'Yes' : 'No'} | Timeout: ${msg.timeout}s</small>`;
+                        html += `<div style="margin-top: 5px;">`;
+                        html += `<button class="btn" onclick="editMessage('${msg.uid}')" style="font-size: 10px; padding: 2px 6px;">Edit</button>`;
+                        html += `<button class="btn btn-danger" onclick="deleteMessage('${msg.uid}')" style="font-size: 10px; padding: 2px 6px;">Delete</button>`;
+                        html += `</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    container.innerHTML = html || 'No messages configured';
+                }
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+        
+        function openMessageDialog(ip) {
+            const deviceName = document.querySelector(`[data-device="${ip}"] h3`).textContent.trim();
+            openChatForDevice(ip, deviceName);
+        }
+        
+        function openAddMessageDialog() {
+            // Add message modal
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;';
+            
+            const content = document.createElement('div');
+            content.style.cssText = 'background: white; padding: 20px; border: 1px solid #ccc; max-width: 600px; max-height: 80%; overflow-y: auto;';
+            
+            content.innerHTML = `
+                <h3>Add New Message</h3>
+                <form id="addMessageForm" onsubmit="submitNewMessage(event, this.closest('[style*=\\"position: fixed\\"]'))">
+                    <div class="form-group">
+                        <label for="messageUid">Message ID (Unique identifier):</label>
+                        <input type="text" id="messageUid" name="uid" required placeholder="e.g., emergency, delivery">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="messageEnglish">English Message:</label>
+                        <textarea id="messageEnglish" name="english" required placeholder="Message in English" rows="3" style="width: 100%; padding: 6px; border: 1px solid #ccc;"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="messageSpanish">Spanish Message:</label>
+                        <textarea id="messageSpanish" name="spanish" required placeholder="Mensaje en español" rows="3" style="width: 100%; padding: 6px; border: 1px solid #ccc;"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="responseType">Response Required:</label>
+                        <select id="responseType" name="response" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                            <option value="true">Yes - Wait for user response</option>
+                            <option value="false">No - Display only</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="messageTimeout">Timeout (seconds):</label>
+                        <input type="number" id="messageTimeout" name="timeout" value="30" min="5" max="3600" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="messageIcon">Icon:</label>
+                        <select id="messageIcon" name="icon" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                            <option value="operator">Operator</option>
+                            <option value="technician">Technician</option>
+                            <option value="system">System</option>
+                            <option value="none">None</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-topå: 20px;">
+                        <button type="submit" class="btn btn-success">Add Message</button>
+                        <button type="button" class="btn btn-danger" onclick="closeModalHelper(this)">Cancel</button>
+                    </div>
+                </form>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+        }
+        
+        function submitNewMessage(event, modal) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            const uid = formData.get('uid');
+            const english = formData.get('english');
+            const spanish = formData.get('spanish');
+            const response = formData.get('response') === 'true';
+            const timeout = parseInt(formData.get('timeout'));
+            const icon = formData.get('icon');
+            
+            addMessage(uid, english, spanish, response, timeout, icon, modal);
+        }
+        
+        async function addMessage(uid, englishText, spanishText, requireResponse, timeout, icon, modal) {
+            try {
+                const message = [
+                    {
+                        language: 'en',
+                        text: englishText
+                    },
+                    {
+                        language: 'es',
+                        text: spanishText
+                    }
+                ];
+                
+                const response = await fetch('/message/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        uid, 
+                        message, 
+                        response: requireResponse, 
+                        timeout, 
+                        icon 
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadMessages();
+                    modal.remove();
+                    alert('Message added successfully');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error adding message: ' + error.message);
+            }
+        }
+        
+        async function editMessage(uid) {
+            try {
+                const response = await fetch('/messages');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    alert('Error loading message details');
+                    return;
+                }
+                
+                const message = result.messages.find(m => m.uid === uid);
+                if (!message) {
+                    alert('Message not found');
+                    return;
+                }
+                
+                // Edit modal with pre-filled form
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;';
+                
+                const content = document.createElement('div');
+                content.style.cssText = 'background: white; padding: 20px; border: 1px solid #ccc; max-width: 600px; max-height: 80%; overflow-y: auto;';
+                
+                const englishText = message.message.find(m => m.language === 'en')?.text || '';
+                const spanishText = message.message.find(m => m.language === 'es')?.text || '';
+                
+                content.innerHTML = `
+                    <h3>Edit Message: ${uid}</h3>
+                    <form id="editMessageForm" onsubmit="submitEditMessage(event, '${uid}', this.closest('[style*=\\"position: fixed\\"]'))">
+                        <div class="form-group">
+                            <label>Message ID:</label>
+                            <input type="text" value="${uid}" disabled style="width: 100%; padding: 6px; border: 1px solid #ccc; background: #f5f5f5;">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editEnglish">English Message:</label>
+                            <textarea id="editEnglish" name="english" required rows="3" style="width: 100%; padding: 6px; border: 1px solid #ccc;">${englishText}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editSpanish">Spanish Message:</label>
+                            <textarea id="editSpanish" name="spanish" required rows="3" style="width: 100%; padding: 6px; border: 1px solid #ccc;">${spanishText}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editResponse">Response Required:</label>
+                            <select id="editResponse" name="response" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                                <option value="true" ${message.response ? 'selected' : ''}>Yes - Wait for user response</option>
+                                <option value="false" ${!message.response ? 'selected' : ''}>No - Display only</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editTimeout">Timeout (seconds):</label>
+                            <input type="number" id="editTimeout" name="timeout" value="${message.timeout}" min="5" max="3600" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editIcon">Icon:</label>
+                            <select id="editIcon" name="icon" style="width: 100%; padding: 6px; border: 1px solid #ccc;">
+                                <option value="operator" ${message.icon === 'operator' ? 'selected' : ''}>Operator</option>
+                                <option value="technician" ${message.icon === 'technician' ? 'selected' : ''}>Technician</option>
+                                <option value="system" ${message.icon === 'system' ? 'selected' : ''}>System</option>
+                                <option value="none" ${message.icon === 'none' ? 'selected' : ''}>None</option>
+                            </select>
+                        </div>
+                        
+                        <div style="margin-top: 20px;">
+                            <button type="submit" class="btn btn-success">Update Message</button>
+                            <button type="button" class="btn btn-danger" onclick="closeModalHelper(this)">Cancel</button>
+                        </div>
+                    </form>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+            } catch (error) {
+                alert('Error loading message for editing: ' + error.message);
+            }
+        }
+        
+        function submitEditMessage(event, uid, modal) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            const english = formData.get('english');
+            const spanish = formData.get('spanish');
+            const response = formData.get('response') === 'true';
+            const timeout = parseInt(formData.get('timeout'));
+            const icon = formData.get('icon');
+            
+            updateMessage(uid, english, spanish, response, timeout, icon, modal);
+        }
+        
+        async function updateMessage(uid, englishText, spanishText, requireResponse, timeout, icon, modal) {
+            try {
+                const message = [
+                    {
+                        language: 'en',
+                        text: englishText
+                    },
+                    {
+                        language: 'es',
+                        text: spanishText
+                    }
+                ];
+                
+                const response = await fetch(`/message/${uid}/edit`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message, 
+                        response: requireResponse, 
+                        timeout, 
+                        icon 
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadMessages();
+                    modal.remove();
+                    alert('Message updated successfully');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error updating message: ' + error.message);
+            }
+        }
+        
+        async function deleteMessage(uid) {
+            if (!confirm(`Are you sure you want to delete the message "${uid}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/message/${uid}/delete`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadMessages();
+                    alert('Message deleted successfully');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error deleting message: ' + error.message);
+            }
+        }
+        
+        // Status refresh functionality
+        async function refreshDeviceStatus() {
+            try {
+                const response = await fetch('/sentrios/status');
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Update status indicators
+                    result.sentrios.forEach(sentrio => {
+                        const statusIndicator = document.querySelector(`[data-device="${sentrio.ip}"] .status-indicator`);
+                        if (statusIndicator) {
+                            statusIndicator.className = `status-indicator status-${sentrio.status}`;
+                        }
+                        
+                        const statusText = document.querySelector(`[data-device="${sentrio.ip}"] .device-status`);
+                        if (statusText) {
+                            statusText.textContent = sentrio.status;
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error refreshing device status:', error);
+            }
+        }
+        
+        // Automatic call polling for all devices
+        function startCallPolling() {
+            const config = window.deviceConfig || [];
+            
+            // Poll call status every 3 seconds for all devices
+            setInterval(() => {
+                document.querySelectorAll('[data-device]').forEach(deviceCard => {
+                    const ip = deviceCard.getAttribute('data-device');
+                    if (ip) {
+                        checkCallStatus(ip);
+                    }
+                });
+            }, 3000);
+        }
+        
+        // Store device IPs for polling
+        function updateDeviceConfig() {
+            const devices = [];
+            document.querySelectorAll('[data-device]').forEach(deviceCard => {
+                const ip = deviceCard.getAttribute('data-device');
+                if (ip) {
+                    devices.push(ip);
+                }
+            });
+            window.deviceConfig = devices;
+        }
+                
+        // Load messages and start status refresh on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMessages();
+            
+            // Initialize resize handle
+            initializeResizeHandle();
+            
+            // Update device configuration for polling
+            updateDeviceConfig();
+            
+            // Start automatic call polling
+            setTimeout(startCallPolling, 2000);
+            
+            // Refresh status every 10 seconds
+            setInterval(refreshDeviceStatus, 10000);
+            
+            // Initial status refresh after 2 seconds
+            setTimeout(refreshDeviceStatus, 2000);
+        });
+    </script>
+</body>
+</html>

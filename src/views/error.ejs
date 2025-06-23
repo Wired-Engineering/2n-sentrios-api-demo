@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/css/error.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Oops! Something went wrong</h1>
+        <div class="error-code"><%= locals.error && locals.error.status || 500 %></div>
+        <div class="error-message">
+            <%= message %>
+        </div>
+        
+        <% if (locals.error && locals.error.stack) { %>
+        <details>
+            <summary>Error Details</summary>
+            <div class="error-details">
+                <pre><%= locals.error.stack %></pre>
+            </div>
+        </details>
+        <% } %>
+        
+        <div style="margin-top: 30px;">
+            <a href="/" class="btn">Go Home</a>
+        </div>
+    </div>
+</body>
+</html>
