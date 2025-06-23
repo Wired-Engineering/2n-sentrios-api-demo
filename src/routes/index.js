@@ -249,6 +249,34 @@ async function fetchCamSnapshot(req, res, _next) {
     }
 }
 
+async function streamMotionJPEG(req, res, _next) {
+    try {
+        const config = getConfig();
+        const { username, password } = config.auth;
+        const { ip, width = 640, height = 480, fps = 10 } = req.query;
+        
+        if (!ip) {
+            return res.status(400).json({ success: false, error: 'IP address required' });
+        }
+        
+        const streamResponse = await makeDigestRequest(
+            `https://${ip}/api/camera/snapshot?width=${width}&height=${height}&fps=${fps}`,
+            'GET',
+            null,
+            username,
+            password,
+            0,
+            'stream'
+        );
+        
+        res.set('Content-Type', streamResponse.headers['content-type'] || 'multipart/x-mixed-replace');
+        streamResponse.data.pipe(res);
+        
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+}
+
 function pollStatus(req, res) {
     const { ip, interval = 3000 } = req.query;
     
@@ -507,6 +535,8 @@ router.put('/message', sendMessage)
 router.put('/message/freetext', sendFreetextMessage)
 
 router.get('/snapshot', fetchCamSnapshot)
+
+router.get('/stream', streamMotionJPEG)
 
 router.get('/events', pollStatus)
 

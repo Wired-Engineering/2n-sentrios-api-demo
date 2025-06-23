@@ -663,9 +663,12 @@
                         sendMsgBtn.style.opacity = hasActiveCalls ? '1' : '0.5';
                     }
                     
-                    // Automatically take snapshot if there are active calls
+                    // Start video stream if there are active calls, otherwise take snapshot
                     if (hasActiveCalls) {
-                        takeInlineSnapshot(ip);
+                        // Start motion JPEG stream at instead of nmanual snapshots
+                        if (!isStreamActive(ip)) {
+                            startVideoStream(ip);
+                        }
                         
                         // Create new session if one doesn't exist for this call
                         if (!deviceSessions.has(ip)) {
@@ -685,6 +688,11 @@
                             openChatForDevice(ip, deviceName, true);
                         }
                     } else {
+                        // Stop video stream when no active calls
+                        if (isStreamActive(ip)) {
+                            stopVideoStream(ip);
+                        }
+                        
                         // Save final session data when call ends
                         if (deviceSessions.has(ip)) {
                             const history = deviceChats.get(ip) || [];
@@ -708,6 +716,11 @@
                         sendMsgBtn.disabled = true;
                         sendMsgBtn.style.opacity = '0.5';
                     }
+                    
+                    // Stop video stream when no call data
+                    if (isStreamActive(ip)) {
+                        stopVideoStream(ip);
+                    }
                 }
                 statusDiv.style.display = 'block';
             } catch (error) {
@@ -716,6 +729,11 @@
                 if (sendMsgBtn) {
                     sendMsgBtn.disabled = true;
                     sendMsgBtn.style.opacity = '0.5';
+                }
+                
+                // Stop video stream on error
+                if (isStreamActive(ip)) {
+                    stopVideoStream(ip);
                 }
             }
         }
@@ -740,9 +758,83 @@
             }
         }
         
+        // Video streaming management
+        const activeStreams = new Map(); // Track active video streams
+        
         // Snapshot
         async function takeSnapshot(ip) {
+            // If video stream is active, don't take snapshot as we already have live feed
+            if (isStreamActive(ip)) {
+                return; // Stream is already running
+            }
             takeInlineSnapshot(ip);
+        }
+        
+        function startVideoStream(ip) {
+            const container = document.getElementById('snapshot-container-' + ip.replace(/\./g, '-'));
+            const content = document.getElementById('snapshot-content-' + ip.replace(/\./g, '-'));
+            const timeDiv = document.getElementById('snapshot-time-' + ip.replace(/\./g, '-'));
+            
+            // Stop any existing stream for this device
+            stopVideoStream(ip);
+            
+            try {
+                // Show container
+                container.style.display = 'block';
+                
+                // Create video element for motion JPEG stream
+                const img = document.createElement('img');
+                img.src = `/stream?ip=${ip}&width=640&height=480&source=external&fps=10`;
+                img.alt = 'Live Camera Feed';
+                img.style.cssText = 'max-width: 280px; height: auto; border: 1px solid #ccc; display: block; margin: 0 auto;';
+                
+                img.onload = function() {
+                    content.innerHTML = '';
+                    content.appendChild(img);
+                    timeDiv.innerHTML = `Live Stream (10 FPS) - Started: ${new Date().toLocaleString()}`;
+                };
+                
+                img.onerror = function() {
+                    content.innerHTML = `<p style="margin: 5px 0; color: red;">Failed to start video stream</p>`;
+                    timeDiv.innerHTML = '';
+                };
+                
+                // Store reference to the stream
+                activeStreams.set(ip, {
+                    img: img,
+                    startTime: new Date()
+                });
+                
+            } catch (error) {
+                content.innerHTML = `<p style="margin: 5px 0; color: red;">Error: ${error.message}</p>`;
+                timeDiv.innerHTML = '';
+            }
+        }
+        
+        function stopVideoStream(ip) {
+            const container = document.getElementById('snapshot-container-' + ip.replace(/\./g, '-'));
+            const content = document.getElementById('snapshot-content-' + ip.replace(/\./g, '-'));
+            const timeDiv = document.getElementById('snapshot-time-' + ip.replace(/\./g, '-'));
+            
+            // Remove from active streams
+            if (activeStreams.has(ip)) {
+                const stream = activeStreams.get(ip);
+                if (stream.img && stream.img.parentNode) {
+                    stream.img.src = ''; // Stop the stream
+                }
+                activeStreams.delete(ip);
+            }
+            
+            // Hide container or show stopped message
+            if (container) {
+                container.style.display = 'none';
+                content.innerHTML = '';
+                timeDiv.innerHTML = '';
+            }
+        }
+        
+        function isStreamActive(ip) {
+            return activeStreams.has(ip);
         }
         
         async function takeInlineSnapshot(ip) {
