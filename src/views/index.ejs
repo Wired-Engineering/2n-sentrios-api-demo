@@ -646,7 +646,7 @@
                 if (result.success && result.result && result.result.sessions) {
                     let html = '';
                     result.result.sessions.forEach(session => {
-                        if (session.state === 'active' || session.state === 'connecting') {
+                        if (session.state === 'active' || session.state === 'connecting' || session.state === 'connected') {
                             hasActiveCalls = true;
                         }
                         html += `<div>Session ${session.session}: ${session.state} (${session.direction})`;
