@@ -98,12 +98,15 @@
     
     <!-- Chat Container (Hidden by default) -->
     <div id="chat-container" class="chat-container">
-        <div class="chat-header">
+        <div class="chat-header" id="chat-header">
             <div>
                 <strong id="chat-device-name">Device Chat</strong>
                 <br><small id="chat-device-ip"></small>
             </div>
-            <button class="chat-close-btn" onclick="closeChatContainer()">&times;</button>
+            <div style="display: flex; gap: 5px;">
+                <button class="btn btn-danger" id="disconnect-call-btn" onclick="disconnectActiveCall()" style="padding: 4px 8px; font-size: 11px;">Disconnect Call</button>
+                <button class="chat-close-btn" onclick="closeChatContainer()">&times;</button>
+            </div>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
         <div class="chat-input">
@@ -140,6 +143,116 @@
     </div>
     
     <script>
+        // Make chat window draggable
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+        
+        function initDragElement() {
+            const dragItem = document.getElementById('chat-container');
+            const dragHandle = document.getElementById('chat-header');
+            
+            if (dragHandle) {
+                dragHandle.addEventListener('mousedown', dragStart);
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', dragEnd);
+            }
+        }
+        
+        function dragStart(e) {
+            const dragItem = document.getElementById('chat-container');
+            if (e.target.closest('button')) return; // Don't drag if clicking buttons
+            
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+            
+            if (e.target.closest('#chat-header')) {
+                isDragging = true;
+            }
+        }
+        
+        function drag(e) {
+            if (isDragging) {
+                e.preventDefault();
+                const dragItem = document.getElementById('chat-container');
+                
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+                
+                xOffset = currentX;
+                yOffset = currentY;
+                
+                dragItem.style.transform = `translate(${currentX}px, ${currentY}px)`;
+                dragItem.style.right = 'auto';
+                dragItem.style.bottom = 'auto';
+                dragItem.style.top = dragItem.offsetTop + 'px';
+                dragItem.style.left = dragItem.offsetLeft + 'px';
+            }
+        }
+        
+        function dragEnd(e) {
+            initialX = currentX;
+            initialY = currentY;
+            isDragging = false;
+        }
+        
+        // Initialize drag on page load
+        document.addEventListener('DOMContentLoaded', initDragElement);
+        
+        // Clean up EventSource connections when page unloads
+        window.addEventListener('beforeunload', function() {
+            stopAllMonitoring();
+        });
+        
+        // Global variables to track active call
+        let activeCallSession = null;
+        let activeCallDevice = null;
+        
+        async function disconnectActiveCall() {
+            if (!activeCallDevice || !activeCallSession) {
+                alert('No active call to disconnect');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to disconnect this call?')) return;
+            
+            try {
+                const response = await fetch('/calls/disconnect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: activeCallDevice, session: activeCallSession })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('Call disconnected successfully');
+                    
+                    // If chat is open, close it
+                    if (currentChatDevice === activeCallDevice) {
+                        closeChatContainer();
+                    }
+                    
+                    // Stop real-time monitoring for this device
+                    stopCallStatusMonitoring(activeCallDevice);
+                    
+                    // Refresh call status
+                    checkCallStatus(activeCallDevice);
+                    
+                    // Clear active call info
+                    activeCallDevice = null;
+                    activeCallSession = null;
+                } else {
+                    alert('Error disconnecting call: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error disconnecting call: ' + error.message);
+            }
+        }
+        
         // Device Management
         async function addDevice() {
             const ip = document.getElementById('device-ip').value;
@@ -171,6 +284,9 @@
         async function removeDevice(ip) {
             if (!confirm('Are you sure you want to remove this device?')) return;
             
+            // Stop monitoring this device if active
+            stopCallStatusMonitoring(ip);
+            
             try {
                 const response = await fetch('/sentrios/remove', {
                     method: 'POST',
@@ -194,13 +310,34 @@
         const deviceSessions = new Map(); // Store current session info per device
         let currentChatDevice = null;
         let availableMessages = [];
+        let userClosedChat = false; // Track if user manually closed the chat
+        
+        // EventSource connections for real-time updates
+        const eventSources = new Map(); // Store EventSource connections per device
         
         async function openChatForDevice(ip, name, forNewCall = false) {
             currentChatDevice = ip;
             
-            // Only load chat history from server if this is NOT a new call
-            if (!forNewCall) {
-                await loadChatHistoryFromServer(ip, forNewCall);
+            // Check if we already have a session for this device (active call)
+            const existingSession = deviceSessions.get(ip);
+            const hasActiveSession = !!existingSession;
+            
+            // Set active call info for disconnect button if there's an active session
+            if (hasActiveSession) {
+                activeCallDevice = ip;
+                activeCallSession = existingSession.callSession;
+            }
+            
+            // If there's an active session and we already have chat history, don't reload from server
+            if (hasActiveSession && deviceChats.has(ip)) {
+                // Use existing in-memory chat history for active session
+                console.log('Using existing chat history for active session');
+            } else if (!forNewCall && !hasActiveSession) {
+                // Only load old history if this is NOT a new call and there's no active session
+                await loadChatHistoryFromServer(ip, false);
+            } else {
+                // For new calls or when no history exists, start fresh
+                deviceChats.set(ip, []);
             }
             
             // Update chat header
@@ -214,7 +351,9 @@
             displayChatHistory(ip);
             
             // Show chat container
-            document.getElementById('chat-container').style.display = 'block';
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.classList.add('active');
+            userClosedChat = false;
         }
         
         async function loadChatHistoryFromServer(ip, forNewCall = false) {
@@ -259,8 +398,18 @@
         }
         
         function closeChatContainer() {
-            document.getElementById('chat-container').style.display = 'none';
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.classList.remove('active');
             currentChatDevice = null;
+            userClosedChat = true; // Mark that user manually closed the chat
+            
+            // Reset position for next time it opens
+            chatContainer.style.transform = '';
+            chatContainer.style.right = '20px';
+            chatContainer.style.bottom = '20px';
+            chatContainer.style.top = '';
+            xOffset = 0;
+            yOffset = 0;
         }
         
         async function loadMessagesForChat() {
@@ -632,26 +781,71 @@
             }
         }
         
-        // Call Status
-        async function checkCallStatus(ip) {
+        // Real-time call status monitoring with EventSource
+        function startCallStatusMonitoring(ip) {
+            // If already monitoring this device, don't create duplicate
+            if (eventSources.has(ip)) {
+                return;
+            }
+            
+            console.log('Starting real-time monitoring for', ip);
+            const eventSource = new EventSource(`/events?ip=${ip}&interval=3000`);
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const result = JSON.parse(event.data);
+                    if (result.success) {
+                        processCallStatus(ip, result);
+                    }
+                } catch (error) {
+                    console.error('Error processing event data:', error);
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('EventSource error for', ip, error);
+                // Reconnect will happen automatically
+            };
+            
+            eventSources.set(ip, eventSource);
+        }
+        
+        function stopCallStatusMonitoring(ip) {
+            const eventSource = eventSources.get(ip);
+            if (eventSource) {
+                console.log('Stopping real-time monitoring for', ip);
+                eventSource.close();
+                eventSources.delete(ip);
+            }
+        }
+        
+        function stopAllMonitoring() {
+            eventSources.forEach((eventSource, ip) => {
+                console.log('Stopping monitoring for', ip);
+                eventSource.close();
+            });
+            eventSources.clear();
+        }
+        
+        // Process call status updates (used by both manual check and EventSource)
+        function processCallStatus(ip, result) {
             const statusDiv = document.getElementById('call-status-' + ip.replace(/\./g, '-'));
             const detailsDiv = document.getElementById('call-details-' + ip.replace(/\./g, '-'));
             const sendMsgBtn = document.getElementById('send-msg-' + ip.replace(/\./g, '-'));
             
-            try {
-                const response = await fetch(`/calls/status?ip=${ip}`);
-                const result = await response.json();
-                
-                let hasActiveCalls = false;
+            let hasActiveCalls = false;
                 if (result.success && result.result && result.result.sessions) {
                     let html = '';
                     result.result.sessions.forEach(session => {
                         if (session.state === 'active' || session.state === 'connecting' || session.state === 'connected') {
                             hasActiveCalls = true;
+                            // Set active call info when we have an active call
+                            activeCallDevice = ip;
+                            activeCallSession = session.session;
                         }
                         html += `<div>Session ${session.session}: ${session.state} (${session.direction})`;
                         if (session.calls && session.calls.length > 0) {
-                            html += `<button class="btn btn-danger" onclick="disconnectCall('${ip}', ${session.session})">Disconnect</button>`;
+                            html += `<button class="btn btn-danger" onclick="disconnectActiveCall()">Disconnect</button>`;
                         }
                         html += '</div>';
                     });
@@ -670,20 +864,44 @@
                             startVideoStream(ip);
                         }
                         
-                        // Create new session if one doesn't exist for this call
-                        if (!deviceSessions.has(ip)) {
-                            const sessionId = `call_${new Date().toISOString().replace(/[:.]/g, '-')}_${result.result.sessions[0].session || 'unknown'}`;
+                        // Check if this is a new session (different session number)
+                        const currentSession = result.result.sessions[0].session;
+                        const existingSession = deviceSessions.get(ip);
+                        
+                        if (!existingSession || existingSession.callSession !== currentSession) {
+                            // This is a new call session, clear old history
+                            const sessionId = `call_${new Date().toISOString().replace(/[:.]/g, '-')}_${currentSession || 'unknown'}`;
+                            
+                            // Save old session if it had messages
+                            if (existingSession && deviceChats.has(ip)) {
+                                const oldHistory = deviceChats.get(ip) || [];
+                                if (oldHistory.length > 0) {
+                                    saveChatHistoryToServer(ip);
+                                }
+                            }
+                            
+                            // Set up new session
                             deviceSessions.set(ip, {
                                 sessionId,
                                 startTime: new Date().toISOString(),
-                                callSession: result.result.sessions[0].session
+                                callSession: currentSession
                             });
-                            // Clear current chat history to start fresh
+                            
+                            // Clear chat history for new session
                             deviceChats.set(ip, []);
+                            
+                            // If chat is already open, update it with empty history
+                            if (currentChatDevice === ip) {
+                                document.getElementById('chat-messages').innerHTML = '';
+                            }
                         }
                         
-                        // Auto-open chat for this device if not already open
-                        if (currentChatDevice !== ip) {
+                        // Update active call info for disconnect button
+                        activeCallDevice = ip;
+                        activeCallSession = currentSession;
+                        
+                        // Auto-open chat for this device if not already open and user hasn't manually closed it
+                        if (currentChatDevice !== ip && !userClosedChat) {
                             const deviceName = document.querySelector(`[data-device="${ip}"] h3`).textContent.trim();
                             openChatForDevice(ip, deviceName, true);
                         }
@@ -705,6 +923,9 @@
                         // Clear current chat history
                         deviceChats.set(ip, []);
                         
+                        // Reset the user closed flag when call ends
+                        userClosedChat = false;
+                        
                         // Close chat if it's open for this device
                         if (currentChatDevice === ip) {
                             closeChatContainer();
@@ -721,9 +942,25 @@
                     if (isStreamActive(ip)) {
                         stopVideoStream(ip);
                     }
-                }
-                statusDiv.style.display = 'block';
+            }
+            statusDiv.style.display = 'block';
+        }
+        
+        // Manual call status check (triggers real-time monitoring)
+        async function checkCallStatus(ip) {
+            try {
+                // Start real-time monitoring if not already active
+                startCallStatusMonitoring(ip);
+                
+                // Do an immediate check
+                const response = await fetch(`/calls/status?ip=${ip}`);
+                const result = await response.json();
+                processCallStatus(ip, result);
             } catch (error) {
+                const detailsDiv = document.getElementById('call-details-' + ip.replace(/\./g, '-'));
+                const statusDiv = document.getElementById('call-status-' + ip.replace(/\./g, '-'));
+                const sendMsgBtn = document.getElementById('send-msg-' + ip.replace(/\./g, '-'));
+                
                 detailsDiv.innerHTML = 'Error: ' + error.message;
                 statusDiv.style.display = 'block';
                 if (sendMsgBtn) {
@@ -738,25 +975,6 @@
             }
         }
         
-        async function disconnectCall(ip, session) {
-            try {
-                const response = await fetch('/calls/disconnect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip, session })
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert('Call disconnected successfully');
-                    checkCallStatus(ip);
-                } else {
-                    alert('Error: ' + result.error);
-                }
-            } catch (error) {
-                alert('Error disconnecting call: ' + error.message);
-            }
-        }
         
         // Video streaming management
         const activeStreams = new Map(); // Track active video streams

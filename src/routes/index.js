@@ -517,6 +517,7 @@ function clearChatHistory(req, res) {
 
 var router = express.Router();
 
+// ==================== PAGE ROUTES ====================
 
 /* GET index page */
 router.get('/', fetchSentrios, function(req, res, next) {
@@ -524,31 +525,102 @@ router.get('/', fetchSentrios, function(req, res, next) {
     res.render('index');
 });
 
+// ==================== DEVICE MANAGEMENT ====================
+
+/* GET all devices with status check (uses cache for homepage, live check for API) */
 router.get('/sentrios', fetchSentrios)
 
+/* POST add new device */
+router.post('/sentrios/add', function(req, res) {
+    try {
+        const { ip, name } = req.body;
+        if (!ip || !name) {
+            return res.status(400).json({ success: false, error: 'IP and name required' });
+        }
+        
+        addSentrio(ip, name);
+        res.json({ success: true, message: 'Sentrio added successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/* POST remove device */
+router.post('/sentrios/remove', function(req, res) {
+    try {
+        const { ip } = req.body;
+        if (!ip) {
+            return res.status(400).json({ success: false, error: 'IP required' });
+        }
+        
+        removeSentrio(ip);
+        res.json({ success: true, message: 'Sentrio removed successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ==================== CALL MANAGEMENT ====================
+
+/* GET call status for a specific device */
 router.get('/calls/status', fetchcallStatus)
 
+/* POST disconnect an active call */
 router.post('/calls/disconnect', disconnectCall)
 
-router.put('/message', sendMessage)
-
-router.put('/message/freetext', sendFreetextMessage)
-
-router.get('/snapshot', fetchCamSnapshot)
-
-router.get('/stream', streamMotionJPEG)
-
+/* GET Server-Sent Events for real-time call status updates */
 router.get('/events', pollStatus)
 
+// ==================== MESSAGING ====================
+
+/* PUT send a template message to device */
+router.put('/message', sendMessage)
+
+/* PUT send a freetext message to device */
+router.put('/message/freetext', sendFreetextMessage)
+
+/* GET all available message templates */
+router.get('/messages', function(req, res) {
+    try {
+        const config = getConfig();
+        res.json({ success: true, messages: config.messages });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/* POST create new message template */
 router.post('/message/add', createMessage)
+
+/* PUT edit existing message template */
 router.put('/message/:id/edit', editMessage)
+
+/* POST delete message template */
 router.post('/message/:id/delete', deleteMessage)
 
-// Chat history endpoints
+// ==================== CAMERA/VIDEO ====================
+
+/* GET single camera snapshot */
+router.get('/snapshot', fetchCamSnapshot)
+
+/* GET motion JPEG stream for live video */
+router.get('/stream', streamMotionJPEG)
+
+// ==================== CHAT HISTORY ====================
+
+/* GET chat history for a device (latest session) */
 router.get('/chat-history/:ip', getChatHistory)
+
+/* GET all chat sessions for a device */
 router.get('/chat-history/:ip/sessions', getChatSessions)
+
+/* POST save chat history for a device */
 router.post('/chat-history/:ip', saveChatHistory)
+
+/* DELETE clear chat history for a device */
 router.delete('/chat-history/:ip', clearChatHistory)
+
+/* GET download specific chat history file */
 router.get('/chat-history/:ip/download/:fileName', function(req, res) {
     try {
         const { ip, fileName } = req.params;
@@ -566,66 +638,5 @@ router.get('/chat-history/:ip/download/:fileName', function(req, res) {
     }
 })
 
-// Additional endpoints for managing sentrios
-router.post('/sentrios/add', function(req, res) {
-    try {
-        const { ip, name } = req.body;
-        if (!ip || !name) {
-            return res.status(400).json({ success: false, error: 'IP and name required' });
-        }
-        
-        addSentrio(ip, name);
-        res.json({ success: true, message: 'Sentrio added successfully' });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-router.post('/sentrios/remove', function(req, res) {
-    try {
-        const { ip } = req.body;
-        if (!ip) {
-            return res.status(400).json({ success: false, error: 'IP required' });
-        }
-        
-        removeSentrio(ip);
-        res.json({ success: true, message: 'Sentrio removed successfully' });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// Get available messages
-router.get('/messages', function(req, res) {
-    try {
-        const config = getConfig();
-        res.json({ success: true, messages: config.messages });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// Get cached status for quick updates
-router.get('/sentrios/status', function(req, res) {
-    try {
-        const config = getConfig();
-        const results = [];
-        
-        for (const sentrio of config.sentrios) {
-            const cached = sentryStatusCache.get(sentrio.ip);
-            results.push({
-                ip: sentrio.ip,
-                name: sentrio.name,
-                status: cached ? cached.status : 'unknown',
-                lastUpdate: cached ? cached.lastUpdate : null,
-                error: cached ? cached.error : null
-            });
-        }
-        
-        res.json({ success: true, sentrios: results });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 module.exports = router;
