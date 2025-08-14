@@ -11,10 +11,6 @@ function createDefaultConfig() {
             password: "admin",
         },
         sentrios: [],
-        polling: {
-            health_check: 30000,
-            call_status: 3000
-        },
         messages: []
     };
 }

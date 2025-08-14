@@ -294,6 +294,11 @@ function pollStatus(req, res) {
     const config = getConfig();
     const { username, password } = config.auth;
     
+    // Track previous states to detect changes
+    let lastCallState = null;
+    let lastHealthState = null;
+    
+    // Poll call status every interval
     const pollInterval = setInterval(async () => {
         try {
             const response = await makeDigestRequest(
@@ -304,14 +309,72 @@ function pollStatus(req, res) {
                 password
             );
             
-            res.write(`data: ${JSON.stringify(response.data)}\n\n`);
+            const currentState = JSON.stringify(response.data);
+            if (currentState !== lastCallState) {
+                res.write(`data: ${JSON.stringify({ type: 'call', ...response.data })}\n\n`);
+                lastCallState = currentState;
+            }
         } catch (error) {
-            res.write(`data: ${JSON.stringify({ success: false, error: error.message })}\n\n`);
+            const errorState = JSON.stringify({ success: false, error: error.message });
+            if (errorState !== lastCallState) {
+                res.write(`data: ${JSON.stringify({ type: 'call', success: false, error: error.message })}\n\n`);
+                lastCallState = errorState;
+            }
         }
     }, parseInt(interval));
     
+    // Poll device health every 10 seconds
+    const healthInterval = setInterval(async () => {
+        try {
+            await makeDigestRequest(
+                `https://${ip}/api/system/status`,
+                'GET',
+                null,
+                username,
+                password
+            );
+            
+            const newHealthState = 'online';
+            if (newHealthState !== lastHealthState) {
+                res.write(`data: ${JSON.stringify({ type: 'health', success: true, status: 'online', ip })}\n\n`);
+                lastHealthState = newHealthState;
+            }
+        } catch (error) {
+            const newHealthState = 'offline';
+            if (newHealthState !== lastHealthState) {
+                res.write(`data: ${JSON.stringify({ type: 'health', success: false, status: 'offline', ip, error: error.message })}\n\n`);
+                lastHealthState = newHealthState;
+            }
+        }
+    }, 10000);
+    
+    // Send initial health check immediately
+    (async () => {
+        try {
+            await makeDigestRequest(
+                `https://${ip}/api/system/status`,
+                'GET',
+                null,
+                username,
+                password
+            );
+            res.write(`data: ${JSON.stringify({ type: 'health', success: true, status: 'online', ip })}\n\n`);
+            lastHealthState = 'online';
+        } catch (error) {
+            res.write(`data: ${JSON.stringify({ type: 'health', success: false, status: 'offline', ip, error: error.message })}\n\n`);
+            lastHealthState = 'offline';
+        }
+    })();
+    
+    // Send heartbeat every 30 seconds to keep connection alive
+    const heartbeatInterval = setInterval(() => {
+        res.write(`: heartbeat\n\n`);
+    }, 30000);
+    
     req.on('close', () => {
         clearInterval(pollInterval);
+        clearInterval(healthInterval);
+        clearInterval(heartbeatInterval);
     });
 }
 

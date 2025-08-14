@@ -794,8 +794,11 @@
             eventSource.onmessage = function(event) {
                 try {
                     const result = JSON.parse(event.data);
-                    if (result.success) {
+                    
+                    if (result.type === 'call' && result.success) {
                         processCallStatus(ip, result);
+                    } else if (result.type === 'health') {
+                        updateDeviceHealth(result.ip, result.status);
                     }
                 } catch (error) {
                     console.error('Error processing event data:', error);
@@ -946,16 +949,18 @@
             statusDiv.style.display = 'block';
         }
         
-        // Manual call status check (triggers real-time monitoring)
+        // Manual call status check (ensures real-time monitoring is active)
         async function checkCallStatus(ip) {
             try {
                 // Start real-time monitoring if not already active
                 startCallStatusMonitoring(ip);
                 
-                // Do an immediate check
-                const response = await fetch(`/calls/status?ip=${ip}`);
-                const result = await response.json();
-                processCallStatus(ip, result);
+                // Only do an immediate check if not already monitoring
+                if (!eventSources.has(ip)) {
+                    const response = await fetch(`/calls/status?ip=${ip}`);
+                    const result = await response.json();
+                    processCallStatus(ip, result);
+                }
             } catch (error) {
                 const detailsDiv = document.getElementById('call-details-' + ip.replace(/\./g, '-'));
                 const statusDiv = document.getElementById('call-status-' + ip.replace(/\./g, '-'));
@@ -1441,44 +1446,28 @@
             }
         }
         
-        // Status refresh functionality
-        async function refreshDeviceStatus() {
-            try {
-                const response = await fetch('/sentrios/status');
-                const result = await response.json();
-                
-                if (result.success) {
-                    // Update status indicators
-                    result.sentrios.forEach(sentrio => {
-                        const statusIndicator = document.querySelector(`[data-device="${sentrio.ip}"] .status-indicator`);
-                        if (statusIndicator) {
-                            statusIndicator.className = `status-indicator status-${sentrio.status}`;
-                        }
-                        
-                        const statusText = document.querySelector(`[data-device="${sentrio.ip}"] .device-status`);
-                        if (statusText) {
-                            statusText.textContent = sentrio.status;
-                        }
-                    });
-                }
-            } catch (error) {
-                console.error('Error refreshing device status:', error);
+        // Update device health status (called by EventSource)
+        function updateDeviceHealth(ip, status) {
+            const statusIndicator = document.querySelector(`[data-device="${ip}"] .status-indicator`);
+            if (statusIndicator) {
+                statusIndicator.className = `status-indicator status-${status}`;
+            }
+            
+            const statusText = document.querySelector(`[data-device="${ip}"] .device-status`);
+            if (statusText) {
+                statusText.textContent = status;
             }
         }
         
-        // Automatic call polling for all devices
-        function startCallPolling() {
-            const config = window.deviceConfig || [];
-            
-            // Poll call status every 3 seconds for all devices
-            setInterval(() => {
-                document.querySelectorAll('[data-device]').forEach(deviceCard => {
-                    const ip = deviceCard.getAttribute('data-device');
-                    if (ip) {
-                        checkCallStatus(ip);
-                    }
-                });
-            }, 3000);
+        // Start EventSource monitoring for all devices
+        function startCallMonitoring() {
+            // Start real-time monitoring via EventSource for all devices
+            document.querySelectorAll('[data-device]').forEach(deviceCard => {
+                const ip = deviceCard.getAttribute('data-device');
+                if (ip) {
+                    startCallStatusMonitoring(ip);
+                }
+            });
         }
         
         // Store device IPs for polling
@@ -1503,14 +1492,8 @@
             // Update device configuration for polling
             updateDeviceConfig();
             
-            // Start automatic call polling
-            setTimeout(startCallPolling, 2000);
-            
-            // Refresh status every 10 seconds
-            setInterval(refreshDeviceStatus, 10000);
-            
-            // Initial status refresh after 2 seconds
-            setTimeout(refreshDeviceStatus, 2000);
+            // Start EventSource monitoring for all devices
+            setTimeout(startCallMonitoring, 2000);
         });
     </script>
 </body>

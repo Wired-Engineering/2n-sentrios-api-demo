@@ -43,10 +43,6 @@ auth:
 
 sentrios: []
 
-polling:
-  health_check_interval: 5000  # Health check interval in ms
-  call_status_interval: 3000   # Call status polling in ms
-
 messages: []
 ```
 
@@ -60,7 +56,7 @@ messages: []
 ### Call Management
 - `GET /calls/status?ip=<device_ip>` - Get call status for device
 - `POST /calls/disconnect` - Disconnect active call (requires `ip`, `session`)
-- `GET /events?ip=<device_ip>&interval=3000` - Server-sent events for call polling
+- `GET /events?ip=<device_ip>&interval=3000` - Server-sent events for call status polling (interval in ms, default: 3000)
 
 ### Messaging
 - `PUT /message` - Send message to device (requires `ip`, `messageUid`)
